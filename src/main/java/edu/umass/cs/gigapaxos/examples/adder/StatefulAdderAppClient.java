@@ -2,13 +2,13 @@ package edu.umass.cs.gigapaxos.examples.adder;
 
 import edu.umass.cs.gigapaxos.PaxosClientAsync;
 import edu.umass.cs.gigapaxos.PaxosConfig;
-import edu.umass.cs.gigapaxos.interfaces.ClientRequest;
 import edu.umass.cs.gigapaxos.interfaces.Request;
 import edu.umass.cs.gigapaxos.interfaces.RequestCallback;
 import edu.umass.cs.gigapaxos.paxospackets.RequestPacket;
 import org.json.JSONException;
 
 import java.io.IOException;
+import java.util.Random;
 
 /**
  * @author arun
@@ -36,16 +36,18 @@ public class StatefulAdderAppClient extends PaxosClientAsync {
 	 */
 	public static void main(String[] args) throws IOException, JSONException, InterruptedException {
 		StatefulAdderAppClient noopClient = new StatefulAdderAppClient();
+		Random random = new Random();
 		for (int i = 0; i < 100; i++) {
-			final String requestValue = (int)(Math.random()*Integer.MAX_VALUE)+"";
-			final int j = i;
+			final String requestValue = String.valueOf(random.nextInt(10));
+
+			int finalI = i;
 			noopClient.sendRequest(PaxosConfig.getDefaultServiceName(),
 					requestValue, new RequestCallback() {
 				long createTime = System.currentTimeMillis();
 				@Override
 				public void handleResponse(Request response) {
 					System.out
-							.println(j+": Response for request ["
+							.println(finalI +": Response for request ["
 									+ requestValue
 									+ "] = "
 									+ ((RequestPacket)response).getResponseValue()
