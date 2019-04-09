@@ -407,6 +407,7 @@ public abstract class ReconfigurableNode<NodeIDType> {
 		PaxosConfig.ensureFileHandlerDirExists();
 		Config.register(args);
 		ReconfigurationConfig.setConsoleHandler();
+//		PaxosConfig.setConsoleHandler(Level.INFO);
 
 		PaxosConfig.sanityCheck();
 		if (args.length == 0)

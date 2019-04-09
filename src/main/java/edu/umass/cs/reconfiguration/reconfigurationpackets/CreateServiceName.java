@@ -293,9 +293,19 @@ public class CreateServiceName extends ClientReconfigurationPacket {
 		} else
 			this.failedCreates = null;
 
-		this.initGroup = json.has(Keys.INIT_GROUP.toString()) ? Util
-				.getSocketAddresses(json.getJSONArray(Keys.INIT_GROUP
-						.toString())) : null;
+		if (json.has(Keys.INIT_GROUP.toString())) {
+			JSONArray jsonArray1 = null;
+			try {
+				jsonArray1 = json.getJSONArray(Keys.INIT_GROUP.toString());
+			} catch (JSONException e) {
+				e.printStackTrace();
+				jsonArray1 = new JSONArray();
+				jsonArray1.put(json.getString(Keys.INIT_GROUP.toString()));
+			}
+			this.initGroup = Util.getSocketAddresses(jsonArray1);
+		} else {
+			this.initGroup = null;
+		}
 		this.policy = ReconfigurationConfig.ReconfigureUponActivesChange
 				.valueOf(json.getString(Keys.RECONFIGURE_UPON_ACTIVES_CHANGE
 						.toString()));

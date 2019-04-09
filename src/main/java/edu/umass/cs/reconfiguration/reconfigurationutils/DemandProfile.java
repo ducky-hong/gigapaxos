@@ -16,6 +16,9 @@
 package edu.umass.cs.reconfiguration.reconfigurationutils;
 
 import java.net.InetAddress;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.Set;
 
 import org.json.JSONException;
@@ -210,12 +213,18 @@ public class DemandProfile extends AbstractDemandProfile {
 					- this.lastReconfiguredProfile.numTotalRequests < minRequestsBeforeReconfiguration)
 				return null;
 		}
+
 		/**
 		 * This example simply returns curActives as this policy trivially
 		 * reconfigures to the same set of locations after every call. In
 		 * general, AbstractDemandProfile implementations should return a new
 		 * list different from curActives.
 		 */
+		System.out.println("numRequests = " + numRequests);
+		System.out.println("curActives = " + curActives);
+		if (numRequests > 5 && curActives.size() == 1) {
+			return new HashSet<>(Arrays.asList("AR0", "AR1"));
+		}
 		return curActives;
 	}
 

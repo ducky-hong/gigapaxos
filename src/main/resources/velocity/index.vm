@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Counter Demo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<div id="info">
+    <p id="count">0</p>
+    <button id="btn">Increase</button>
+    <p id="error"></p>
+</div>
+<script>
+    var endpoint = "http://localhost:8080/count";
+    document.getElementById("btn").onclick = function() {
+        fetch("/inc")
+            .then(function() {
+                var start = Date.now()
+                fetch(endpoint)
+                    .then(function(response) {
+                        return response.text()
+                    })
+                    .then(function(text) {
+                        document.getElementById("count").innerHTML = text
+                        document.getElementById("error").innerHTML = (Date.now() - start) + "ms"
+                    })
+                    .catch(error => {
+                        if (endpoint.indexOf("8081") > 0) {
+                            endpoint = "http://localhost:8080/count";
+                        } else {
+                            endpoint = "http://localhost:8081/count";
+                        }
+                        document.getElementById("error").innerHTML = "reconfigured, try again"
+                    })
+            })
+    }
+</script>
+</body>
+</html>

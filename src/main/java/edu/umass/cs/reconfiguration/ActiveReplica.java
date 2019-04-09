@@ -33,6 +33,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import edu.umass.cs.reconfiguration.examples.DispatcherApp;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -153,6 +154,8 @@ public class ActiveReplica<NodeIDType> implements ReconfiguratorCallback,
 	 * in ActiveReplica. */
 	private final CallbackMap<NodeIDType> callbackMap = new CallbackMap<NodeIDType>();
 
+	private HttpActiveReplica httpActiveReplica;
+
 	@SuppressWarnings("unchecked")
 	private ActiveReplica(AbstractReplicaCoordinator<NodeIDType> appC,
 			ReconfigurableNodeConfig<NodeIDType> nodeConfig,
@@ -188,6 +191,9 @@ public class ActiveReplica<NodeIDType> implements ReconfiguratorCallback,
 				AbstractReconfiguratorDB.RecordNames.AR_RC_NODES.toString(),
 				this.appCoordinator.getARRCNodesAsString());
 
+		if (!isFromReconfigurator() && ReconfigurationConfig.application.equals(DispatcherApp.class)) {
+			this.httpActiveReplica = new HttpActiveReplica(this.appCoordinator, this);
+		}
 		// initInstrumenter();
 	}
 
@@ -1260,7 +1266,7 @@ public class ActiveReplica<NodeIDType> implements ReconfiguratorCallback,
 	 * method. This allows for reporting policies that locally aggregate some
 	 * stats based on a threshold number of requests before reporting to
 	 * reconfigurators. */
-	private void updateDemandStats(Request request, InetAddress sender) {
+	void updateDemandStats(Request request, InetAddress sender) {
 		long t = System.nanoTime();
 		if (this.noReporting)
 			return;
@@ -1501,5 +1507,10 @@ public class ActiveReplica<NodeIDType> implements ReconfiguratorCallback,
 						AbstractReconfiguratorDB.RecordNames.AR_RC_NODES.toString())
 //				|| request.getServiceName().equals(ReconfigurationConfig.getDefaultServiceName())
 				? true: false;
+	}
+
+	private boolean isFromReconfigurator() {
+		NodeIDType myID = this.messenger.getMyID();
+		return this.nodeConfig.getReconfigurators().contains(myID);
 	}
 }

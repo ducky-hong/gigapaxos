@@ -51,7 +51,7 @@ public class NoopApp extends AbstractReconfigurablePaxosApp<String> implements
 	private static final String DEFAULT_INIT_STATE = "";
 	// total number of reconfigurations across all records
 	private int numReconfigurationsSinceRecovery = -1;
-	private boolean verbose = false;
+	private boolean verbose = true;
 
 	private class AppData {
 		final String name;
