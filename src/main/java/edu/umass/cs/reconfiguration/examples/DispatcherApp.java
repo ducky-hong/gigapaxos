@@ -95,6 +95,7 @@ public class DispatcherApp extends AbstractReconfigurablePaxosApp implements Rep
                 }
                 response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
                 HttpUtil.setContentLength(response, response.content().readableBytes());
+                response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*"); // Allowing all origins
                 ChannelFuture flushPromise = channelMap.get(request.getRequestID()).writeAndFlush(response);
                 flushPromise.addListener(ChannelFutureListener.CLOSE);
                 httpResponse.close();
@@ -120,6 +121,31 @@ public class DispatcherApp extends AbstractReconfigurablePaxosApp implements Rep
     @Override
     public String checkpoint(String name) {
         System.out.println("checkpoint: " + name + " " + serviceStates.get(name));
+        if (name.contains("s1")) {
+            Integer port = servicePorts.get(name);
+            HttpUrl url = new HttpUrl.Builder()
+                    .scheme("http")
+                    .host("localhost")
+                    .port(port)
+                    .addPathSegment("state")
+                    .build();
+
+            okhttp3.Request.Builder requestBuilder = new okhttp3.Request.Builder();
+            requestBuilder.url(url);
+            requestBuilder.get();
+            okhttp3.Request httpClientRequest = requestBuilder.build();
+
+            try {
+                Response httpResponse = httpClient.newCall(httpClientRequest).execute();
+                System.out.println("response = " + httpResponse);
+                String state = httpResponse.body().string();
+                System.out.println("state = " + httpResponse);
+                return state;
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
         return serviceStates.get(name);
     }
 
@@ -149,10 +175,12 @@ public class DispatcherApp extends AbstractReconfigurablePaxosApp implements Rep
         Ports ports = new Ports();
         ExposedPort tcp = ExposedPort.tcp(80);
         ports.bind(tcp, Ports.Binding.empty());
+        String image = "simple-counter"; // TODO: image from service name
         CreateContainerResponse container = client
-                .createContainerCmd("nginx")
+                .createContainerCmd(image)
 //                .withName(name)
                 .withHostConfig(HostConfig.newHostConfig().withPortBindings(ports))
+                .withEnv("STATE=" + state)
                 .exec();
         client.startContainerCmd(container.getId()).exec();
 
@@ -249,7 +277,14 @@ public class DispatcherApp extends AbstractReconfigurablePaxosApp implements Rep
         public String getServiceName() {
             // TODO: hostname to service name
             String host = httpRequest.headers().get("Host");
+            String xServiceName = httpRequest.headers().get("X-SERVICE-NAME");
+            if (xServiceName != null) {
+                host = xServiceName;
+            }
             System.out.println("getServiceName: " + host);
+            if (host.contains("counter.gigapaxos.fun")) {
+                return "s1";
+            }
             return host;
         }
 

@@ -19,6 +19,7 @@ import net.minidev.json.JSONValue;
 import java.net.InetSocketAddress;
 import java.util.*;
 
+import static io.netty.handler.codec.http.HttpResponseStatus.OK;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_0;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
 
@@ -43,6 +44,10 @@ public class HttpActiveReplica {
 
         try {
             int port = appCoordinator.messenger.getListeningSocketAddress().getPort() + 300;
+            String portGiven = System.getProperty("http.activeReplica.port");
+            if (portGiven != null) {
+                port = Integer.parseInt(portGiven);
+            }
             b.bind(port).sync().channel();
         } catch (InterruptedException e) {
             e.printStackTrace();
@@ -128,7 +133,7 @@ public class HttpActiveReplica {
         }
     }
 
-    private static class ActiveReplicaHttpHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
+    public static class ActiveReplicaHttpHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
 
         private AbstractReplicaCoordinator appCoordinator;
 
@@ -141,6 +146,12 @@ public class HttpActiveReplica {
 
         @Override
         protected void channelRead0(ChannelHandlerContext ctx, FullHttpRequest request) throws Exception {
+            if (isCORSPreflightRequest(request.method())) {
+                handleCORSPreflightRequest(ctx, false);
+                return;
+            }
+
+
             String json = FullHttpRequestSerializer.toJsonString(request, (int) (Math.random() * Integer.MAX_VALUE));
             DispatcherApp.HttpReplicableRequest replicableRequest = (DispatcherApp.HttpReplicableRequest) appCoordinator.getRequest(json);
 
@@ -176,6 +187,53 @@ public class HttpActiveReplica {
             if (!keepAlive) {
                 // Close the connection as soon as the response is sent.
                 flushPromise.addListener(ChannelFutureListener.CLOSE);
+            }
+        }
+
+
+        public static void setHeaders(FullHttpResponse response, boolean keepAlive) {
+            HttpHeaders headers = response.headers();
+
+            // CORS headers, required to access resource in browser from different origin
+            headers.set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*"); // Allowing all origins
+            headers.set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS, "GET, POST, OPTIONS"); // Can also add PUT,DELETE,OPTIONS
+            headers.set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, "Accept, Accept-CH, Accept-Charset, Accept-Datetime, Accept-Encoding, Accept-Ext, Accept-Features, Accept-Language, Accept-Params, Accept-Ranges, Access-Control-Allow-Credentials, Access-Control-Allow-Headers, Access-Control-Allow-Methods, Access-Control-Allow-Origin, Access-Control-Expose-Headers, Access-Control-Max-Age, Access-Control-Request-Headers, Access-Control-Request-Method, Age, Allow, Alternates, Authentication-Info, Authorization, C-Ext, C-Man, C-Opt, C-PEP, C-PEP-Info, CONNECT, Cache-Control, Compliance, Connection, Content-Base, Content-Disposition, Content-Encoding, Content-ID, Content-Language, Content-Length, Content-Location, Content-MD5, Content-Range, Content-Script-Type, Content-Security-Policy, Content-Style-Type, Content-Transfer-Encoding, Content-Type, Content-Version, Cookie, Cost, DAV, DELETE, DNT, DPR, Date, Default-Style, Delta-Base, Depth, Derived-From, Destination, Differential-ID, Digest, ETag, Expect, Expires, Ext, From, GET, GetProfile, HEAD, HTTP-date, Host, IM, If, If-Match, If-Modified-Since, If-None-Match, If-Range, If-Unmodified-Since, Keep-Alive, Label, Last-Event-ID, Last-Modified, Link, Location, Lock-Token, MIME-Version, Man, Max-Forwards, Media-Range, Message-ID, Meter, Negotiate, Non-Compliance, OPTION, OPTIONS, OWS, Opt, Optional, Ordering-Type, Origin, Overwrite, P3P, PEP, PICS-Label, POST, PUT, Pep-Info, Permanent, Position, Pragma, ProfileObject, Protocol, Protocol-Query, Protocol-Request, Proxy-Authenticate, Proxy-Authentication-Info, Proxy-Authorization, Proxy-Features, Proxy-Instruction, Public, RWS, Range, Referer, Refresh, Resolution-Hint, Resolver-Location, Retry-After, Safe, Sec-Websocket-Extensions, Sec-Websocket-Key, Sec-Websocket-Origin, Sec-Websocket-Protocol, Sec-Websocket-Version, Security-Scheme, Server, Set-Cookie, Set-Cookie2, SetProfile, SoapAction, Status, Status-URI, Strict-Transport-Security, SubOK, Subst, Surrogate-Capability, Surrogate-Control, TCN, TE, TRACE, Timeout, Title, Trailer, Transfer-Encoding, UA-Color, UA-Media, UA-Pixels, UA-Resolution, UA-Windowpixels, URI, Upgrade, User-Agent, Variant-Vary, Vary, Version, Via, Viewport-Width, WWW-Authenticate, Want-Digest, Warning, Width, X-Content-Duration, X-Content-Security-Policy, X-Content-Type-Options, X-CustomHeader, X-DNSPrefetch-Control, X-Forwarded-For, X-Forwarded-Port, X-Forwarded-Proto, X-Frame-Options, X-Modified, X-OTHER, X-PING, X-PINGOTHER, X-Powered-By, X-Requested-With, X-SERVICE-NAME");
+
+            headers.set(HttpHeaderNames.CONTENT_TYPE, "text/plain; charset=UTF-8");
+
+            if (keepAlive) {
+                // Add 'Content-Length' header only for a keep-alive connection.
+                headers.setInt(HttpHeaderNames.CONTENT_LENGTH, response.content().readableBytes());
+                // Add keep alive header as per:
+                // -
+                // http://www.w3.org/Protocols/HTTP/1.1/draft-ietf-http-v11-spec-01.html#Connection
+                headers.set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
+            }
+        }
+
+        /**
+         * This method checks if a request is a CORS preflight request by checking if the request method
+         * is {@link HttpMethod#OPTIONS}, although that is not the sole property of a CORS preflight request.
+         *
+         * @param httpMethod {@link HttpMethod} of the request
+         * @return True - request is a CORS preflight request, false otherwise
+         */
+        public static boolean isCORSPreflightRequest(HttpMethod httpMethod) {
+            return httpMethod == HttpMethod.OPTIONS;
+        }
+
+        /**
+         * Sends an empty response containing C
+         * @param ctx {@link ChannelHandlerContext} for the request
+         * @param keepAlive If the connection is keep alive (true) or not
+         */
+        public static void handleCORSPreflightRequest(ChannelHandlerContext ctx, boolean keepAlive) {
+            FullHttpResponse httpResponse = new DefaultFullHttpResponse(HTTP_1_1, OK);
+            setHeaders(httpResponse, keepAlive);
+
+            ChannelFuture channelFuture = ctx.writeAndFlush(httpResponse);
+            if (!keepAlive) {
+                channelFuture.addListener(ChannelFutureListener.CLOSE);
             }
         }
     }
