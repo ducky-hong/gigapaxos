@@ -27,10 +27,7 @@ import org.json.JSONObject;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /**
  * @author V. Arun
@@ -293,9 +290,21 @@ public class CreateServiceName extends ClientReconfigurationPacket {
 		} else
 			this.failedCreates = null;
 
-		this.initGroup = json.has(Keys.INIT_GROUP.toString()) ? Util
-				.getSocketAddresses(json.getJSONArray(Keys.INIT_GROUP
-						.toString())) : null;
+		if (json.has(Keys.INIT_GROUP.toString())) {
+			JSONArray array = null;
+			try {
+				array = json.getJSONArray(Keys.INIT_GROUP.toString());
+			} catch (JSONException e) {
+				array = new JSONArray();
+				final String initGroupString = json.getString(Keys.INIT_GROUP.toString());
+				for (String address : initGroupString.split(",")) {
+					array.put(address);
+				}
+			}
+			this.initGroup = Util.getSocketAddresses(array);
+		} else {
+			this.initGroup = null;
+		}
 		this.policy = ReconfigurationConfig.ReconfigureUponActivesChange
 				.valueOf(json.getString(Keys.RECONFIGURE_UPON_ACTIVES_CHANGE
 						.toString()));
