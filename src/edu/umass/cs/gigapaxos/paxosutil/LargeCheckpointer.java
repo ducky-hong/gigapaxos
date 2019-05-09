@@ -1,40 +1,5 @@
 package edu.umass.cs.gigapaxos.paxosutil;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.FilenameFilter;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.InetSocketAddress;
-import java.net.ServerSocket;
-import java.net.Socket;
-import java.nio.file.Files;
-import java.nio.file.NoSuchFileException;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Set;
-import java.util.TreeSet;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ThreadFactory;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-
-import org.json.JSONException;
-import org.json.JSONObject;
-import org.junit.Test;
-import org.junit.runner.JUnitCore;
-import org.junit.runner.Result;
-import org.junit.runner.notification.Failure;
-
 import edu.umass.cs.gigapaxos.PaxosConfig;
 import edu.umass.cs.gigapaxos.PaxosConfig.PC;
 import edu.umass.cs.gigapaxos.SQLPaxosLogger;
@@ -46,6 +11,28 @@ import edu.umass.cs.utils.Config;
 import edu.umass.cs.utils.DefaultTest;
 import edu.umass.cs.utils.StringLocker;
 import edu.umass.cs.utils.Util;
+import org.apache.commons.io.IOUtils;
+import org.json.JSONException;
+import org.json.JSONObject;
+import org.junit.Test;
+import org.junit.runner.JUnitCore;
+import org.junit.runner.Result;
+import org.junit.runner.notification.Failure;
+
+import java.io.*;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * @author arun
@@ -86,6 +73,7 @@ public class LargeCheckpointer {
 
 	private final String checkpointDir;
 	private final String myID;
+	private final String myNodeId;
 	private ServerSocket serverSock;
 	private ScheduledExecutorService executor;
 	private boolean closed = false;
@@ -99,19 +87,13 @@ public class LargeCheckpointer {
 	 *            A unique ID for the node using this LargeCheckpointer
 	 *            instance.
 	 */
-	public LargeCheckpointer(String dir, String myID) {
+	public LargeCheckpointer(String dir, String myID, String myNodeId) {
 		this.checkpointDir = (dir = (dir == null ? Config
 				.getGlobalString(PC.GIGAPAXOS_DATA_DIR) + "/" + PC.PAXOS_LOGS_DIR.getDefaultValue() : dir))
 				+ (dir.endsWith("/") ? "" : "/");
 		this.myID = myID;
+		this.myNodeId = myNodeId;
 		initCheckpointServer();
-	}
-
-	/**
-	 * @param myID
-	 */
-	public LargeCheckpointer(String myID) {
-		this(null, myID);
 	}
 
 	private static final String CHARSET = "ISO-8859-1";
@@ -326,7 +308,6 @@ public class LargeCheckpointer {
 	 * Helper function for getRemoteCheckpoint above that actually fetches the
 	 * reads from the socket and writes to a local file.
 	 * 
-	 * @param paxosID
 	 * @param sockAddr
 	 * @param remoteFilename
 	 * @param fileSize
@@ -334,6 +315,9 @@ public class LargeCheckpointer {
 	 */
 	private static String fetchRemoteCheckpoint(InetSocketAddress sockAddr,
 			String remoteFilename, long fileSize, String localFilename) {
+		log.info("LargeCheckpointer.fetchRemoteCheckpoint " + "sockAddr = [" + sockAddr +
+				"], remoteFilename = [" + remoteFilename + "], fileSize = [" + fileSize +
+				"], localFilename = [" + localFilename + "]");
 		synchronized (stringLocker.get(localFilename)) {
 			String request = remoteFilename + "\n";
 			Socket sock = null;
@@ -358,6 +342,7 @@ public class LargeCheckpointer {
 				}
 				// check exact expected file size
 				if (nTotalRead != fileSize) {
+				    log.warning("nTotalRead " + nTotalRead + " != fileSize " + fileSize);
 					new File(localFilename).delete();
 					localFilename = null;
 				}
@@ -425,7 +410,7 @@ public class LargeCheckpointer {
 		this.deleteOldCheckpoints(getCheckpointDir(), name, 4);
 
 		json.put(Keys.ISA3142.toString(),
-				this.serverSock.getLocalSocketAddress());
+				PaxosConfig.getActives().get(myNodeId).getHostString() + ":" + this.serverSock.getLocalPort());
 		json.put(Keys.FNAME2178.toString(), newFilename);
 		return json.toString();
 	}
@@ -541,38 +526,21 @@ public class LargeCheckpointer {
 	// reads request and transfers requested checkpoint.
 	private static void transferCheckpoint(Socket sock) {
 		{
-			BufferedReader brSock = null, brFile = null;
-			try {
-				brSock = new BufferedReader(new InputStreamReader(
-						sock.getInputStream()));
+			try (BufferedReader brSock = new BufferedReader(new InputStreamReader(
+					sock.getInputStream()))) {
 				// first and only line is request
 				String request = brSock.readLine();
 
 				// synchronized to prevent concurrent file delete
 				synchronized (stringLocker.get(request)) {
 					if ((new File(request).exists())) {
-						// request is filename
-						brFile = new BufferedReader(new InputStreamReader(
-								new FileInputStream(request)));
-						// file successfully open if here
-						OutputStream outStream = sock.getOutputStream();
-						String line = null; // each line is a record
-						while ((line = brFile.readLine()) != null)
-							outStream.write(line.getBytes(CHARSET));
-						outStream.close();
+						try (OutputStream outStream = sock.getOutputStream()) {
+							IOUtils.copyLarge(new FileInputStream(request), outStream);
+						}
 					}
 				}
 			} catch (IOException e) {
 				e.printStackTrace();
-			} finally {
-				try {
-					if (brSock != null)
-						brSock.close();
-					if (brFile != null)
-						brFile.close();
-				} catch (IOException e) {
-					e.printStackTrace();
-				}
 			}
 		}
 	}
@@ -709,7 +677,7 @@ public class LargeCheckpointer {
 		public void test_restore() throws JSONException, IOException {
 			TestReplicable app1 = new TestReplicable();
 			TestReplicable app2 = new TestReplicable();
-			LargeCheckpointer lcp1 = new LargeCheckpointer(".", "123");
+			LargeCheckpointer lcp1 = new LargeCheckpointer(".", "123", "AR0");
 
 			String name = NAME;
 			String state = app1.setRandomState(name);
@@ -732,7 +700,7 @@ public class LargeCheckpointer {
 				IOException {
 			TestReplicable app1 = new TestReplicable();
 			TestReplicable app2 = new TestReplicable();
-			LargeCheckpointer lcp1 = new LargeCheckpointer(".", "123");
+			LargeCheckpointer lcp1 = new LargeCheckpointer(".", "123", "AR0");
 
 			String name = NAME;
 			String state = app1.setRandomState(name);

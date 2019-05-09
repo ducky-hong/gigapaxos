@@ -424,7 +424,7 @@ public class PaxosManager<NodeIDType> {
 		
 		this.unstringer = unstringer;
 		this.largeCheckpointer = new LargeCheckpointer(paxosLogFolder,
-				this.myID + "");
+				this.myID + "", id.toString());
 		this.myApp = LargeCheckpointer.wrap(pi, largeCheckpointer);
 		this.FD = new FailureDetection<NodeIDType>(id, niot, paxosLogFolder);
 		this.pinstances = new MultiArrayMap<String, PaxosInstanceStateMachine>(
